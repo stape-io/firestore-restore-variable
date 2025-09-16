@@ -142,6 +142,14 @@ ___TEMPLATE_PARAMETERS___
           }
         ],
         "defaultValue": "stape/restore"
+      },
+      {
+        "type": "TEXT",
+        "name": "validationTime",
+        "displayName": "Validation Time",
+        "simpleValueType": true,
+        "help": "Time in seconds to add to the current timestamp for the validTill field (e.g., 86400 for 24 hours).",
+        "defaultValue": "86400"
       }
     ]
   },
@@ -183,6 +191,8 @@ const JSON = require('JSON');
 const logToConsole = require('logToConsole');
 const getRequestHeader = require('getRequestHeader');
 const getContainerVersion = require('getContainerVersion');
+const getTimestampMillis = require('getTimestampMillis');
+const makeNumber = require('makeNumber');
 
 const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
@@ -252,10 +262,14 @@ function restoreData(document) {
     }
 
     let mergedIdentifiers = mergeIdentifiers(storedData.identifiers, data.identifiers);
+    const currentTimestamp = getTimestampMillis();
+    const validationTimeMs = (makeNumber(data.validationTime) || 86400) * 1000; // Convert seconds to milliseconds
+
     let objectToStore = {
         identifiers: mergedIdentifiers,
         identifiersValues: getIdentifiersValues(mergedIdentifiers),
         data: dataToStore,
+        validTill: currentTimestamp + validationTimeMs,
     };
 
     if (isLoggingEnabled) {
