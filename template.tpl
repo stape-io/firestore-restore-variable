@@ -14,7 +14,7 @@ ___INFO___
   "version": 1,
   "securityGroups": [],
   "displayName": "Firestore reStore",
-  "description": "Store data inside Firebase by identifiers (user_id, client_id, etc.). Restore data values in case they are found by identifiers. Useful for cookieless, cross-device, and cross-site tracking.",
+  "description": "Store data inside Firebase by identifiers (user_id, client_id, etc.). Restore data values in case they are found by identifiers. Includes automatic TTL expiration for data cleanup. Useful for cookieless, cross-device, and cross-site tracking.",
   "containerContexts": [
     "SERVER"
   ]
@@ -148,7 +148,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "validationTime",
         "displayName": "Validation Time",
         "simpleValueType": true,
-        "help": "Time in seconds to add to the current timestamp for the validTill field (e.g., 86400 for 24 hours).",
+        "help": "Time in seconds to add to the current timestamp for the expiresAt TTL field (e.g., 86400 for 24 hours). Firestore will automatically delete expired documents.",
         "defaultValue": "86400"
       }
     ]
@@ -193,6 +193,7 @@ const getRequestHeader = require('getRequestHeader');
 const getContainerVersion = require('getContainerVersion');
 const getTimestampMillis = require('getTimestampMillis');
 const makeNumber = require('makeNumber');
+const Math = require('Math');
 
 const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
@@ -264,12 +265,16 @@ function restoreData(document) {
     let mergedIdentifiers = mergeIdentifiers(storedData.identifiers, data.identifiers);
     const currentTimestamp = getTimestampMillis();
     const validationTimeMs = (makeNumber(data.validationTime) || 86400) * 1000; // Convert seconds to milliseconds
+    const expiresAtSeconds = Math.floor((currentTimestamp + validationTimeMs) / 1000); // Convert to seconds
 
     let objectToStore = {
         identifiers: mergedIdentifiers,
         identifiersValues: getIdentifiersValues(mergedIdentifiers),
         data: dataToStore,
-        validTill: currentTimestamp + validationTimeMs,
+        expiresAt: {
+            seconds: expiresAtSeconds,
+            nanos: 0
+        },
     };
 
     if (isLoggingEnabled) {
