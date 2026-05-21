@@ -1,4 +1,4 @@
-﻿___TERMS_OF_SERVICE___
+___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -142,6 +142,32 @@ ___TEMPLATE_PARAMETERS___
           }
         ],
         "defaultValue": "stape/restore"
+      },
+      {
+        "type": "CHECKBOX",
+        "name": "ttlSupport",
+        "checkboxText": "TTL Support",
+        "simpleValueType": true,
+        "enablingConditions": [],
+        "defaultValue": false,
+        "subParams": [
+          {
+            "type": "TEXT",
+            "name": "validationTime",
+            "displayName": "validationTime",
+            "simpleValueType": true,
+            "help": "Time in seconds to add to the current timestamp for the expiresAt TTL field (e.g., 86400 for 24 hours). Firestore will automatically delete expired documents.",
+            "defaultValue": 86400,
+            "enablingConditions": [
+              {
+                "paramName": "ttlSupport",
+                "paramValue": true,
+                "type": "EQUALS"
+              }
+            ]
+          }
+        ],
+        "help": "Enabling this field, means switching on Firebase TTL Support. For activating TTL deletion, please configure the use of the \"expiresAt\" field in Firebase"
       }
     ]
   },
@@ -183,6 +209,9 @@ const JSON = require('JSON');
 const logToConsole = require('logToConsole');
 const getRequestHeader = require('getRequestHeader');
 const getContainerVersion = require('getContainerVersion');
+const getTimestampMillis = require('getTimestampMillis');
+const makeNumber = require('makeNumber');
+const Math = require('Math');
 
 const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
@@ -252,11 +281,22 @@ function restoreData(document) {
     }
 
     let mergedIdentifiers = mergeIdentifiers(storedData.identifiers, data.identifiers);
+    const currentTimestamp = getTimestampMillis();
+    const validationTimeMs = (makeNumber(data.validationTime) || 86400) * 1000;
+    const expiresAtSeconds = Math.floor((currentTimestamp + validationTimeMs) / 1000);
+
     let objectToStore = {
-        identifiers: mergedIdentifiers,
-        identifiersValues: getIdentifiersValues(mergedIdentifiers),
-        data: dataToStore,
+      identifiers: mergedIdentifiers,
+      identifiersValues: getIdentifiersValues(mergedIdentifiers),
+      data: dataToStore,
     };
+
+    if (data.ttlSupport) {
+      objectToStore.expiresAt = {
+          seconds: expiresAtSeconds,
+          nanos: 0,
+      };
+    }
 
     if (isLoggingEnabled) {
         logToConsole(
@@ -409,6 +449,10 @@ ___SERVER_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "operation"
+                  },
+                  {
+                    "type": 1,
+                    "string": "databaseId"
                   }
                 ],
                 "mapValue": [
@@ -423,6 +467,10 @@ ___SERVER_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "read_write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "(default)"
                   }
                 ]
               }
@@ -543,5 +591,3 @@ scenarios: []
 ___NOTES___
 
 Created on 15/01/2024, 17:29:11
-
-
