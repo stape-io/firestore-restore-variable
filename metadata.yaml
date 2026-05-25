@@ -1,4 +1,7 @@
-homepage: "https://stape.io/"
+homepage: 'https://stape.io/'
+documentation: 'https://github.com/stape-io/firestore-restore-variable'
 versions:
+  - sha: b8c59e54b346aa77f481126c116ab2f02ef1d3e1
+    changeNotes: Console logging removal.
   - sha: 6d85ca453c81681183cb27fec2d16fdfaa6f7027
     changeNotes: Initial release.

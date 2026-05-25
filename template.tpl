@@ -144,34 +144,6 @@ ___TEMPLATE_PARAMETERS___
         "defaultValue": "stape/restore"
       }
     ]
-  },
-  {
-    "displayName": "Logs Settings",
-    "name": "logsGroup",
-    "groupStyle": "ZIPPY_CLOSED",
-    "type": "GROUP",
-    "subParams": [
-      {
-        "type": "RADIO",
-        "name": "logType",
-        "radioItems": [
-          {
-            "value": "no",
-            "displayValue": "Do not log"
-          },
-          {
-            "value": "debug",
-            "displayValue": "Log to console during debug and preview"
-          },
-          {
-            "value": "always",
-            "displayValue": "Always log to console"
-          }
-        ],
-        "simpleValueType": true,
-        "defaultValue": "debug"
-      }
-    ]
   }
 ]
 
@@ -180,203 +152,122 @@ ___SANDBOXED_JS_FOR_SERVER___
 
 const Firestore = require('Firestore');
 const JSON = require('JSON');
-const logToConsole = require('logToConsole');
-const getRequestHeader = require('getRequestHeader');
-const getContainerVersion = require('getContainerVersion');
 
-const isLoggingEnabled = determinateIsLoggingEnabled();
-const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
+/*==============================================================================
+==============================================================================*/
 
 const identifiersValues = getIdentifiersValues(data.identifiers);
 if (identifiersValues.length === 0) {
-    return {};
+  return {};
 }
 
-let firebaseOptions = {limit: 1};
+let firebaseOptions = { limit: 1 };
 if (data.firebaseProjectId) firebaseOptions.projectId = data.firebaseProjectId;
 
-if (isLoggingEnabled) {
-    logToConsole(
-      JSON.stringify({
-          Name: 'FirestoreReStore',
-          Type: 'Request',
-          TraceId: traceId,
-          EventName: 'FirestoreReStoreGet',
-          RequestMethod: 'GET',
-          RequestUrl: data.firebasePath,
-          RequestBody: identifiersValues,
-      })
-    );
-}
+return Firestore.query(
+  data.firebasePath,
+  [['identifiersValues', 'array-contains-any', identifiersValues]],
+  firebaseOptions
+).then(
+  (documents) => {
+    return restoreData(documents && documents.length > 0 ? documents[0] : {});
+  },
+  () => {
+    return restoreData({});
+  }
+);
 
-return Firestore.query(data.firebasePath, [['identifiersValues', 'array-contains-any', identifiersValues]], firebaseOptions)
-  .then((documents) => {
-      return restoreData(documents && documents.length > 0 ? documents[0] : {});
-  }, () => {
-      return restoreData({});
-  });
+/*==============================================================================
+  Vendor related functions
+==============================================================================*/
 
 function restoreData(document) {
-    let storedData = document.data || {};
-    let dataToStore = {};
+  let storedData = document.data || {};
+  let dataToStore = {};
 
+  if (data.dataValues && data.dataValues.length > 0) {
+    data.dataValues.forEach(function (dataObject) {
+      let item = dataObject.value;
 
-    if (isLoggingEnabled) {
-        logToConsole(
-          JSON.stringify({
-              Name: 'FirestoreReStore',
-              Type: 'Response',
-              TraceId: traceId,
-              EventName: 'FirestoreReStoreGet',
-              ResponseStatusCode: 200,
-              ResponseHeaders: {},
-              ResponseBody: storedData,
-          })
-        );
-    }
+      if (item && item.length > 0) {
+        dataToStore[dataObject.name] = item;
+      } else if (storedData.data && storedData.data[dataObject.name]) {
+        dataToStore[dataObject.name] = storedData.data[dataObject.name];
+      }
+    });
+  }
 
-    if (data.dataValues && data.dataValues.length > 0) {
-        data.dataValues.forEach(function (dataObject) {
-            let item = dataObject.value;
+  if (getObjectLength(dataToStore) === 0 || data.onlyRestore) {
+    return dataToStore;
+  }
 
-            if (item && item.length > 0) {
-                dataToStore[dataObject.name] = item;
-            } else if (storedData.data && storedData.data[dataObject.name]) {
-                dataToStore[dataObject.name] = storedData.data[dataObject.name];
-            }
-        });
-    }
+  let mergedIdentifiers = mergeIdentifiers(storedData.identifiers, data.identifiers);
+  let objectToStore = {
+    identifiers: mergedIdentifiers,
+    identifiersValues: getIdentifiersValues(mergedIdentifiers),
+    data: dataToStore
+  };
 
-    if (getObjectLength(dataToStore) === 0 || data.onlyRestore) {
-        return dataToStore;
-    }
-
-    let mergedIdentifiers = mergeIdentifiers(storedData.identifiers, data.identifiers);
-    let objectToStore = {
-        identifiers: mergedIdentifiers,
-        identifiersValues: getIdentifiersValues(mergedIdentifiers),
-        data: dataToStore,
-    };
-
-    if (isLoggingEnabled) {
-        logToConsole(
-          JSON.stringify({
-              Name: 'FirestoreReStore',
-              Type: 'Request',
-              TraceId: traceId,
-              EventName: 'FirestoreReStorePost',
-              RequestMethod: 'POST',
-              RequestUrl: data.firebasePath,
-              RequestBody: objectToStore,
-          })
-        );
-    }
-
-    return Firestore.write(document.id || data.firebasePath, objectToStore, firebaseOptions)
-      .then(() => {
-          if (isLoggingEnabled) {
-              logToConsole(
-                JSON.stringify({
-                    Name: 'FirestoreReStore',
-                    Type: 'Response',
-                    TraceId: traceId,
-                    EventName: 'FirestoreReStorePOST',
-                    ResponseStatusCode: 200,
-                    ResponseHeaders: {},
-                    ResponseBody: {},
-                })
-              );
-          }
-
-          return dataToStore;
-      }, function () {
-          if (isLoggingEnabled) {
-              logToConsole(
-                JSON.stringify({
-                    Name: 'FirestoreReStore',
-                    Type: 'Response',
-                    TraceId: traceId,
-                    EventName: 'FirestoreReStorePOST',
-                    ResponseStatusCode: 500,
-                    ResponseHeaders: {},
-                    ResponseBody: {},
-                })
-              );
-          }
-
-          return dataToStore;
-      });
+  return Firestore.write(document.id || data.firebasePath, objectToStore, firebaseOptions).then(
+    () => dataToStore,
+    () => dataToStore
+  );
 }
 
 function getIdentifiersValues(identifiers) {
-    let identifiersValues = [];
+  let identifiersValues = [];
 
-    if (identifiers && identifiers.length > 0) {
-        identifiers.forEach(function (identifier) {
-            if (identifier.value) {
-                identifiersValues.push(identifier.value);
-            }
-        });
-    }
+  if (identifiers && identifiers.length > 0) {
+    identifiers.forEach(function (identifier) {
+      if (identifier.value) {
+        identifiersValues.push(identifier.value);
+      }
+    });
+  }
 
-    return identifiersValues;
+  return identifiersValues;
 }
 
 function mergeIdentifiers(oldIdentifiers, newIdentifiers) {
-    let identifiers = [];
+  let identifiers = [];
 
-    if (oldIdentifiers && oldIdentifiers.length > 0) {
-        identifiers = oldIdentifiers;
-    }
+  if (oldIdentifiers && oldIdentifiers.length > 0) {
+    identifiers = oldIdentifiers;
+  }
 
-    if (newIdentifiers && newIdentifiers.length > 0) {
-        newIdentifiers.forEach(function (newIdentifier) {
-            let identifierFound = false;
+  if (newIdentifiers && newIdentifiers.length > 0) {
+    newIdentifiers.forEach(function (newIdentifier) {
+      let identifierFound = false;
 
-            identifiers.forEach(function (identifier) {
-                if (identifier.name === newIdentifier.name && newIdentifier.value) {
-                    identifier.value = newIdentifier.value;
-                    identifierFound = true;
-                }
-            });
+      identifiers.forEach(function (identifier) {
+        if (identifier.name === newIdentifier.name && newIdentifier.value) {
+          identifier.value = newIdentifier.value;
+          identifierFound = true;
+        }
+      });
 
-            if (!identifierFound && newIdentifier.value) {
-                identifiers.push(newIdentifier);
-            }
-        });
-    }
+      if (!identifierFound && newIdentifier.value) {
+        identifiers.push(newIdentifier);
+      }
+    });
+  }
 
-    return identifiers;
+  return identifiers;
 }
+
+/*==============================================================================
+  Helpers
+==============================================================================*/
 
 function getObjectLength(object) {
-    let length = 0;
+  let length = 0;
 
-    for (let key in object) {
-        if (object.hasOwnProperty(key)) {
-            ++length;
-        }
+  for (let key in object) {
+    if (object.hasOwnProperty(key)) {
+      ++length;
     }
-    return length;
-}
-
-function determinateIsLoggingEnabled() {
-    const containerVersion = getContainerVersion();
-    const isDebug = !!(containerVersion && (containerVersion.debugMode || containerVersion.previewMode));
-
-    if (!data.logType) {
-        return isDebug;
-    }
-
-    if (data.logType === 'no') {
-        return false;
-    }
-
-    if (data.logType === 'debug') {
-        return isDebug;
-    }
-
-    return data.logType === 'always';
+  }
+  return length;
 }
 
 
@@ -409,6 +300,10 @@ ___SERVER_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "operation"
+                  },
+                  {
+                    "type": 1,
+                    "string": "databaseId"
                   }
                 ],
                 "mapValue": [
@@ -423,6 +318,10 @@ ___SERVER_PERMISSIONS___
                   {
                     "type": 1,
                     "string": "read_write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "(default)"
                   }
                 ]
               }
@@ -433,102 +332,6 @@ ___SERVER_PERMISSIONS___
     },
     "clientAnnotations": {
       "isEditedByUser": true
-    },
-    "isRequired": true
-  },
-  {
-    "instance": {
-      "key": {
-        "publicId": "read_request",
-        "versionId": "1"
-      },
-      "param": [
-        {
-          "key": "headerWhitelist",
-          "value": {
-            "type": 2,
-            "listItem": [
-              {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "headerName"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
-                    "string": "trace-id"
-                  }
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "key": "headersAllowed",
-          "value": {
-            "type": 8,
-            "boolean": true
-          }
-        },
-        {
-          "key": "requestAccess",
-          "value": {
-            "type": 1,
-            "string": "specific"
-          }
-        },
-        {
-          "key": "headerAccess",
-          "value": {
-            "type": 1,
-            "string": "specific"
-          }
-        },
-        {
-          "key": "queryParameterAccess",
-          "value": {
-            "type": 1,
-            "string": "any"
-          }
-        }
-      ]
-    },
-    "clientAnnotations": {
-      "isEditedByUser": true
-    },
-    "isRequired": true
-  },
-  {
-    "instance": {
-      "key": {
-        "publicId": "logging",
-        "versionId": "1"
-      },
-      "param": [
-        {
-          "key": "environments",
-          "value": {
-            "type": 1,
-            "string": "all"
-          }
-        }
-      ]
-    },
-    "clientAnnotations": {
-      "isEditedByUser": true
-    },
-    "isRequired": true
-  },
-  {
-    "instance": {
-      "key": {
-        "publicId": "read_container_data",
-        "versionId": "1"
-      },
-      "param": []
     },
     "isRequired": true
   }
@@ -542,6 +345,8 @@ scenarios: []
 
 ___NOTES___
 
-Created on 15/01/2024, 17:29:11
+2026-05-21 Change Notes:
+ - Console logging removal.
 
+Created on 15/01/2024, 17:29:11
 
