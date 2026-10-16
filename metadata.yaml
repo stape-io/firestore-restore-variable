@@ -1,6 +1,8 @@
 homepage: 'https://stape.io/'
 documentation: 'https://github.com/stape-io/firestore-restore-variable'
 versions:
+  - sha: bdfe8a26788592b39eb9c2518a2ecc3ca084f4a0
+    changeNotes: Added TTL field and custom database options, collection path fix, number and boolean support.
   - sha: b8c59e54b346aa77f481126c116ab2f02ef1d3e1
     changeNotes: Console logging removal.
   - sha: 6d85ca453c81681183cb27fec2d16fdfaa6f7027
